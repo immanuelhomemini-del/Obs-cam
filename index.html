@@ -157,11 +157,11 @@
         function initSender() {
             document.getElementById('btn-sender').classList.add('hidden');
             
-            // ID generieren (rein numerisch/kleingeschrieben um iOS-Fehler zu vermeiden)
+            // Nur die ID wird in Kleinbuchstaben erzwungen
             const targetRoomId = "room-" + Math.random().toString(36).substring(2, 11).toLowerCase();
             
-            // BEHOBEN: Wir erzwingen die komplette URL in Kleinschreibung, damit Safari nichts verfälscht
-            const currentUrl = window.location.href.split('?')[0].toLowerCase();
+            // BEHOBEN: Behält die exakte Schreibweise (Groß-/Kleinschreibung) deiner GitHub-URL bei!
+            const currentUrl = window.location.href.split('?')[0];
             
             obsLinkInput.value = `${currentUrl}?room=${targetRoomId}`;
             senderInfo.classList.remove('hidden');
@@ -172,17 +172,14 @@
             }).then(stream => {
                 localStream = stream;
                 videoElement.srcObject = stream;
-                videoElement.muted = true; // Verhindert Echo auf dem Handy
+                videoElement.muted = true;
                 getCameras();
 
                 peer = new Peer();
                 peer.on('open', () => {
-                    // Der Intervall ruft den OBS-Raum fortlaufend an, bis OBS geöffnet wird
                     const callInterval = setInterval(() => {
                         if (peer && !peer.destroyed) {
                             const call = peer.call(targetRoomId, localStream);
-                            
-                            // Sobald OBS antwortet und den Stream empfängt
                             call.on('stream', () => {
                                 clearInterval(callInterval);
                                 currentCall = call;
@@ -262,7 +259,7 @@
         function initReceiver(targetRoomId) {
             peer = new Peer(targetRoomId);
             peer.on('call', (call) => {
-                call.answer(); // Nimmt den Stream vom Handy an
+                call.answer();
                 call.on('stream', (remoteStream) => {
                     videoElement.srcObject = remoteStream;
                     videoElement.play().catch(e => console.log(e));
