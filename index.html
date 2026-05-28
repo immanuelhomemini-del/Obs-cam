@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Handy Kamera zu OBS</title>
+    <title>Dynamic Handy Kamera & Audio zu OBS</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body {
@@ -15,20 +15,16 @@
             margin: 0;
             overflow: hidden;
         }
-        
-        /* WICHTIG FÜR OBS-ZOOM: Erlaubt flexibles Skalieren ohne Qualitätsverlust */
         video {
             width: 100vw;
             height: 100vh;
-            object-fit: contain; /* 'contain' sorgt dafür, dass das ganze Bild sichtbar bleibt */
+            object-fit: contain;
             position: absolute;
             top: 0;
             left: 0;
             z-index: 1;
-            background: transparent; /* Transparent für besseres Einbetten in OBS */
-            transform-origin: center center;
+            background: transparent;
         }
-
         .ui-container {
             position: relative;
             z-index: 2;
@@ -53,8 +49,38 @@
             transition: background 0.2s;
         }
         button:hover { background: #218838; }
-        .hidden { display: none !important; }
         
+        /* Styling für die Mute-Buttons */
+        .controls-container {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            gap: 10px;
+        }
+        .btn-control {
+            background: #007bff;
+            font-size: 14px;
+            padding: 10px 15px;
+            flex: 1;
+        }
+        .btn-control:hover { background: #0056b3; }
+        .btn-muted {
+            background: #dc3545 !important;
+        }
+        .btn-muted:hover { background: #bd2130 !important; }
+
+        select {
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            margin-top: 15px;
+            width: 100%;
+            cursor: pointer;
+        }
+        .hidden { display: none !important; }
         #obs-link {
             background: #222;
             padding: 15px;
@@ -71,100 +97,211 @@
 </head>
 <body>
 
-    <video id="remote-video" autoplay playsinline muted></video>
+    <video id="remote-video" autoplay playsinline></video>
 
     <div id="ui" class="ui-container">
         <h2>📱 Handy-Kamera -> OBS</h2>
-        <p>Erstelle einen privaten, einmaligen Stream-Link für OBS.</p>
-        <button id="btn-sender" onclick="initSender()">Stream-Link generieren & Kamera starten</button>
+        <p>Erstelle einen privaten Stream-Link inklusive Ton und Steuerung.</p>
+        <button id="btn-sender" onclick="initSender()">Stream starten</button>
         
         <div id="sender-info" class="hidden">
-            <p><strong>✓ Kamera aktiv!</strong> Kopiere diesen einmaligen Link und füge ihn in OBS als Browserquelle ein:</p>
+            <label for="camera-select" style="display:block; text-align:left; margin-top:10px;">🎥 Kamera wechseln:</label>
+            <select id="camera-select" onchange="switchCamera(this.value)">
+                <option value="">Lade Kameras...</option>
+            </select>
+
+            <div class="controls-container">
+                <button id="btn-mute-cam" class="btn-control" onclick="toggleCamera()">📷 Cam Aus</button>
+                <button id="btn-mute-audio" class="btn-control" onclick="toggleAudio()">🎤 Mic Aus</button>
+            </div>
+
+            <p style="margin-top: 20px;"><strong>✓ Stream aktiv!</strong> Füge diesen Link in OBS ein:</p>
             <div id="obs-link">Generiere Link...</div>
-            <p style="font-size: 12px; color: #aaa; margin-top: 10px;">Hinweis: Schließe dieses Tab auf dem Handy nicht, solange du in OBS streamst.</p>
         </div>
+    </div>
+
+    <div id="obs-ui" class="ui-container hidden">
+        <h2>🔊 Audio aktivieren</h2>
+        <p>Klicke auf den Button, um den Ton des Streams freizuschalten.</p>
+        <button onclick="unlockAudio()">Ton einschalten</button>
     </div>
 
     <script>
         const videoElement = document.getElementById('remote-video');
         const uiContainer = document.getElementById('ui');
+        const obsUiContainer = document.getElementById('obs-ui');
         const obsLinkLabel = document.getElementById('obs-link');
         const senderInfo = document.getElementById('sender-info');
+        const cameraSelect = document.getElementById('camera-select');
         
-        // URL-Parameter auslesen
+        // Buttons für Mute
+        const btnMuteCam = document.getElementById('btn-mute-cam');
+        const btnMuteAudio = document.getElementById('btn-mute-audio');
+        
         const urlParams = new URLSearchParams(window.location.search);
         const roomId = urlParams.get('room');
 
-        // Wenn ein 'room' in der URL steht, sind wir automatisch im OBS-Modus (Empfänger)
+        let localStream = null;
+        let currentPeer = null;
+        let activeCall = null;
+        let uniqueRoomId = "";
+
+        // Status-Variablen für Mute
+        let isCameraActive = true;
+        let isAudioActive = true;
+
         if (roomId) {
             uiContainer.classList.add('hidden');
+            if (!navigator.userAgent.includes("OBS")) {
+                obsUiContainer.classList.remove('hidden');
+            }
             initReceiver(roomId);
+        } else {
+            videoElement.muted = true;
+        }
+
+        function unlockAudio() {
+            videoElement.muted = false;
+            videoElement.play();
+            obsUiContainer.classList.add('hidden');
         }
 
         // --- HANDY MODUS (SENDER) ---
         function initSender() {
             document.getElementById('btn-sender').classList.add('hidden');
+            uniqueRoomId = "obs-stream-ctrl-" + Math.random().toString(36).substring(2, 11);
             
-            // Generiere eine zufällige, eindeutige ID für diesen Stream
-            const uniqueRoomId = "obs-stream-" + Math.random().toString(36).substring(2, 11);
-            
-            // Link für OBS mit dem Raum-Parameter erstellen
             const currentUrl = window.location.href.split('?')[0];
             const obsUrl = `${currentUrl}?room=${uniqueRoomId}`;
             obsLinkLabel.innerText = obsUrl;
             senderInfo.classList.remove('hidden');
 
-            // Kamera starten
-            navigator.mediaDevices.getUserMedia({
-                video: { 
-                    facingMode: "environment",
-                    width: { ideal: 1920 }, // Versuche Full-HD für schärferen Zoom zu bekommen
-                    height: { ideal: 1080 }
-                },
-                audio: false
-            }).then(stream => {
-                videoElement.srcObject = stream;
-                
-                // Verbindung zum Peer-Server aufbauen (als Sender lassen wir PeerJS eine ID vergeben)
-                const peer = new Peer();
-                
-                peer.on('open', () => {
-                    // Sobald das Handy bereit ist, lauscht es, ob die OBS-Browserquelle (uniqueRoomId) anruft
-                    peer.on('call', (call) => {
-                        call.answer(stream); // Stream an OBS senden
-                    });
-                });
+            startStream(null);
+        }
 
-                // Intervall-Verbindung für den Fall, dass OBS zuerst da war
-                setInterval(() => {
-                    const conn = peer.connect(uniqueRoomId);
-                }, 3000);
+        function startStream(deviceId) {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+
+            const videoConstraints = {
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
+            };
+
+            if (deviceId) {
+                videoConstraints.deviceId = { exact: deviceId };
+            } else {
+                videoConstraints.facingMode = "environment";
+            }
+
+            navigator.mediaDevices.getUserMedia({
+                video: videoConstraints,
+                audio: { echoCancellation: true, noiseSuppression: true }
+            }).then(stream => {
+                localStream = stream;
+                videoElement.srcObject = stream;
+
+                // Behalte den aktuellen Mute-Status bei, falls die Kamera gewechselt wird
+                localStream.getVideoTracks()[0].enabled = isCameraActive;
+                if(localStream.getAudioTracks().length > 0) {
+                    localStream.getAudioTracks()[0].enabled = isAudioActive;
+                }
+
+                getCameras();
+
+                if (!currentPeer) {
+                    currentPeer = new Peer();
+                    currentPeer.on('open', () => {
+                        currentPeer.on('call', (call) => {
+                            activeCall = call;
+                            call.answer(localStream);
+                        });
+                    });
+
+                    setInterval(() => {
+                        currentPeer.connect(uniqueRoomId);
+                    }, 3000);
+                } else if (activeCall && activeCall.peerConnection) {
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    const sender = activeCall.peerConnection.getSenders().find(s => s.track.kind === 'video');
+                    if (sender) {
+                        sender.replaceTrack(videoTrack);
+                    }
+                }
 
             }).catch(err => {
-                alert("Kamera-Fehler: " + err);
+                alert("Fehler beim Kamerazugriff: " + err);
             });
+        }
+
+        // NEU: Funktion zum Ein-/Ausschalten der Kamera
+        function toggleCamera() {
+            if (localStream) {
+                isCameraActive = !isCameraActive;
+                localStream.getVideoTracks()[0].enabled = isCameraActive;
+                
+                if (isCameraActive) {
+                    btnMuteCam.innerText = "📷 Cam Aus";
+                    btnMuteCam.classList.remove('btn-muted');
+                } else {
+                    btnMuteCam.innerText = "📷 Cam An";
+                    btnMuteCam.classList.add('btn-muted');
+                }
+            }
+        }
+
+        // NEU: Funktion zum Ein-/Ausschalten des Mikrofons
+        function toggleAudio() {
+            if (localStream && localStream.getAudioTracks().length > 0) {
+                isAudioActive = !isAudioActive;
+                localStream.getAudioTracks()[0].enabled = isAudioActive;
+                
+                if (isAudioActive) {
+                    btnMuteAudio.innerText = "🎤 Mic Aus";
+                    btnMuteAudio.classList.remove('btn-muted');
+                } else {
+                    btnMuteAudio.innerText = "🎤 Mic An";
+                    btnMuteAudio.classList.add('btn-muted');
+                }
+            }
+        }
+
+        function getCameras() {
+            navigator.mediaDevices.enumerateDevices()
+                .then(devices => {
+                    cameraSelect.innerHTML = "";
+                    let videoDevices = devices.filter(device => device.kind === 'videoinput');
+                    
+                    videoDevices.forEach((device, index) => {
+                        const option = document.createElement('option');
+                        option.value = device.deviceId;
+                        option.text = device.label || `Kamera ${index + 1}`;
+                        
+                        if (localStream && localStream.getVideoTracks()[0].getSettings().deviceId === device.deviceId) {
+                            option.selected = true;
+                        }
+                        cameraSelect.appendChild(option);
+                    });
+                });
+        }
+
+        function switchCamera(deviceId) {
+            if (deviceId) {
+                startStream(deviceId);
+            }
         }
 
         // --- OBS MODUS (EMPFÄNGER) ---
         function initReceiver(targetRoomId) {
-            // Der OBS-PC meldet sich mit der exakten Raum-ID beim Server an
             const peer = new Peer(targetRoomId);
 
-            peer.on('open', () => {
-                console.log("OBS wartet auf Stream im Raum: " + targetRoomId);
-            });
-
-            // Wenn das Handy anruft (oder wir die Verbindung herstellen)
             peer.on('call', (call) => {
-                call.answer(); // Keine eigene Kamera zurücksenden
+                call.answer();
                 call.on('stream', (remoteStream) => {
                     videoElement.srcObject = remoteStream;
+                    videoElement.muted = false; 
                 });
-            });
-
-            // Falls die Verbindung abbricht, versucht PeerJS im Hintergrund stabil zu bleiben
-            peer.on('error', (err) => {
-                console.log("Verbindung wird neu aufgebaut...", err);
             });
         }
     </script>
