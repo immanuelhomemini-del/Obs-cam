@@ -50,7 +50,6 @@
         }
         button:hover { background: #218838; }
         
-        /* Styling für die Mute-Buttons */
         .controls-container {
             display: flex;
             justify-content: space-around;
@@ -64,9 +63,7 @@
             flex: 1;
         }
         .btn-control:hover { background: #0056b3; }
-        .btn-muted {
-            background: #dc3545 !important;
-        }
+        .btn-muted { background: #dc3545 !important; }
         .btn-muted:hover { background: #bd2130 !important; }
 
         select {
@@ -134,7 +131,6 @@
         const senderInfo = document.getElementById('sender-info');
         const cameraSelect = document.getElementById('camera-select');
         
-        // Buttons für Mute
         const btnMuteCam = document.getElementById('btn-mute-cam');
         const btnMuteAudio = document.getElementById('btn-mute-audio');
         
@@ -146,7 +142,6 @@
         let activeCall = null;
         let uniqueRoomId = "";
 
-        // Status-Variablen für Mute
         let isCameraActive = true;
         let isAudioActive = true;
 
@@ -162,13 +157,15 @@
 
         function unlockAudio() {
             videoElement.muted = false;
-            videoElement.play();
+            videoElement.play().catch(e => console.log(e));
             obsUiContainer.classList.add('hidden');
         }
 
         // --- HANDY MODUS (SENDER) ---
         function initSender() {
             document.getElementById('btn-sender').classList.add('hidden');
+            
+            // BEHOBEN: Hier fehlte das .random()
             uniqueRoomId = "obs-stream-ctrl-" + Math.random().toString(36).substring(2, 11);
             
             const currentUrl = window.location.href.split('?')[0];
@@ -202,7 +199,6 @@
                 localStream = stream;
                 videoElement.srcObject = stream;
 
-                // Behalte den aktuellen Mute-Status bei, falls die Kamera gewechselt wird
                 localStream.getVideoTracks()[0].enabled = isCameraActive;
                 if(localStream.getAudioTracks().length > 0) {
                     localStream.getAudioTracks()[0].enabled = isAudioActive;
@@ -224,9 +220,15 @@
                     }, 3000);
                 } else if (activeCall && activeCall.peerConnection) {
                     const videoTrack = localStream.getVideoTracks()[0];
-                    const sender = activeCall.peerConnection.getSenders().find(s => s.track.kind === 'video');
-                    if (sender) {
-                        sender.replaceTrack(videoTrack);
+                    const audioTrack = localStream.getAudioTracks()[0];
+                    
+                    const videoSender = activeCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (videoSender && videoTrack) {
+                        videoSender.replaceTrack(videoTrack);
+                    }
+                    const audioSender = activeCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio');
+                    if (audioSender && audioTrack) {
+                        audioSender.replaceTrack(audioTrack);
                     }
                 }
 
@@ -235,7 +237,6 @@
             });
         }
 
-        // NEU: Funktion zum Ein-/Ausschalten der Kamera
         function toggleCamera() {
             if (localStream) {
                 isCameraActive = !isCameraActive;
@@ -251,7 +252,6 @@
             }
         }
 
-        // NEU: Funktion zum Ein-/Ausschalten des Mikrofons
         function toggleAudio() {
             if (localStream && localStream.getAudioTracks().length > 0) {
                 isAudioActive = !isAudioActive;
@@ -300,7 +300,8 @@
                 call.answer();
                 call.on('stream', (remoteStream) => {
                     videoElement.srcObject = remoteStream;
-                    videoElement.muted = false; 
+                    videoElement.muted = false;
+                    videoElement.play().catch(e => console.log("Autoplay blockiert:", e));
                 });
             });
         }
