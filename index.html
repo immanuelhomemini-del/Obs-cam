@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Handy Kamera zu OBS</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <title>Manu Cam -> OBS (Powered by VDO.ninja)</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Arial, sans-serif;
             background: #121212;
             color: white;
             text-align: center;
@@ -15,27 +14,18 @@
             margin: 0;
             overflow: hidden;
         }
-        video {
-            width: 100vw;
-            height: 100vh;
-            object-fit: contain;
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 1;
-            background: black;
-        }
         .ui-container {
-            position: relative;
-            z-index: 2;
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(20, 20, 20, 0.95);
             padding: 30px;
             border-radius: 15px;
             display: inline-block;
-            margin-top: 50px;
-            max-width: 90%;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            margin-top: 40px;
+            max-width: 450px;
+            width: 90%;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.7);
+            border: 1px solid #28a745;
         }
+        h2 { margin-top: 0; color: #28a745; }
         button {
             background: #28a745;
             color: white;
@@ -44,36 +34,32 @@
             font-size: 18px;
             border-radius: 8px;
             cursor: pointer;
-            margin-top: 10px;
-            font-weight: bold;
-        }
-        .controls-container {
-            display: flex;
-            justify-content: space-around;
             margin-top: 15px;
-            gap: 10px;
+            font-weight: bold;
+            width: 100%;
+            transition: background 0.2s;
         }
-        .btn-control { background: #007bff; font-size: 14px; padding: 10px 15px; flex: 1; }
-        .btn-muted { background: #dc3545 !important; }
+        button:hover { background: #218838; }
         
         .copy-box {
             display: flex;
             margin-top: 15px;
             gap: 5px;
-            background: #222;
-            border: 2px dashed #28a745;
+            background: #1a1a1a;
+            border: 1px solid #444;
             border-radius: 5px;
             padding: 5px;
         }
-        #obs-link-input {
+        input[type="text"] {
             background: transparent;
             border: none;
             color: #a9ffb7;
             font-family: monospace;
             padding: 10px;
             flex: 1;
-            font-size: 14px;
+            font-size: 13px;
             outline: none;
+            width: 100%;
         }
         .btn-copy {
             background: #007bff;
@@ -81,58 +67,92 @@
             padding: 10px 15px;
             margin-top: 0;
             border-radius: 5px;
-            white-space: nowrap;
+            width: auto;
         }
         .btn-copy.success { background: #28a745; }
-
-        select {
-            background: #333;
-            color: white;
-            border: 1px solid #555;
-            padding: 10px;
-            font-size: 16px;
-            border-radius: 5px;
+        
+        /* NEU: Styling für den Zoom-Bereich */
+        .zoom-container {
+            background: #222;
+            padding: 15px;
+            border-radius: 8px;
             margin-top: 15px;
+            border: 1px solid #444;
+        }
+        .zoom-label {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        .zoom-slider {
             width: 100%;
+            -webkit-appearance: none;
+            background: #444;
+            height: 8px;
+            border-radius: 5px;
+            outline: none;
+        }
+        .zoom-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            background: #28a745;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        iframe {
+            width: 100vw;
+            height: 100vh;
+            border: none;
+            position: absolute;
+            top: 0; left: 0;
+            z-index: 1;
+            background: black;
         }
         .hidden { display: none !important; }
-        
-        /* Hinweistext für OBS */
-        #obs-click-hint {
-            position: absolute;
-            top: 0; left: 0; width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.7);
-            z-index: 10;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
+        .setup-step {
+            text-align: left;
+            background: #222;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+            font-size: 14px;
+            border-left: 4px solid #007bff;
         }
     </style>
 </head>
 <body>
 
-    <video id="remote-video" autoplay playsinline muted></video>
+    <iframe id="ninja-stream" class="hidden" allow="camera;microphone;autoplay;fullscreen"></iframe>
 
     <div id="ui" class="ui-container">
-        <h2>📱 Handy-Kamera -> OBS</h2>
-        <p>Klicke auf Start, um den Stream-Raum zu eröffnen.</p>
-        <button id="btn-sender" onclick="initSender()">Stream starten</button>
+        <h2>📱 Manu Cam -> OBS</h2>
+        <p>Nutzt die ultraschnelle, stabile Verbindung von VDO.ninja direkt auf deiner Website.</p>
+        
+        <div id="setup-area">
+            <button onclick="startCamStream()">Kamera-Stream starten</button>
+        </div>
         
         <div id="sender-info" class="hidden">
-            <label for="camera-select" style="display:block; text-align:left; margin-top:10px;">🎥 Kamera wechseln:</label>
-            <select id="camera-select" onchange="switchCamera(this.value)">
-                <option value="">Lade Kameras...</option>
-            </select>
-
-            <div class="controls-container">
-                <button id="btn-mute-cam" class="btn-control" onclick="toggleCamera()">📷 Cam Aus</button>
-                <button id="btn-mute-audio" class="btn-control" onclick="toggleAudio()">🎤 Mic Aus</button>
+            <div class="setup-step">
+                <strong>Schritt 1:</strong> Erlaube oben den Zugriff auf deine Kamera.
             </div>
 
-            <p style="margin-top: 20px; text-align: left; margin-bottom: 5px;"><strong>✓ Verbindung bereit!</strong></p>
-            
+            <div class="zoom-container">
+                <div class="zoom-label">
+                    <span>🔍 Kamera-Zoom</span>
+                    <span id="zoom-val">1.0x</span>
+                </div>
+                <input type="range" id="zoom-range" class="zoom-slider" min="1" max="4" step="0.1" value="1" oninput="updateZoom(this.value)">
+            </div>
+
+            <div class="setup-step">
+                <strong>Schritt 2:</strong> Kopiere den unteren Link und füge ihn am PC in OBS als Browserquelle ein.
+            </div>
+
             <div class="copy-box">
                 <input type="text" id="obs-link-input" readonly onclick="this.select();">
                 <button id="btn-copy" class="btn-copy" onclick="copyToClipboard()">Kopieren</button>
@@ -140,77 +160,55 @@
         </div>
     </div>
 
-    <div id="obs-click-hint" class="hidden" onclick="activateObsStream()">
-        <h2>🔴 Live-Stream empfangen</h2>
-        <p>Bitte klicke hier mitten ins Fenster, um Bild und Ton zu aktivieren.</p>
-    </div>
-
     <script>
-        const videoElement = document.getElementById('remote-video');
         const uiContainer = document.getElementById('ui');
+        const setupArea = document.getElementById('setup-area');
+        const senderInfo = document.getElementById('sender-info');
         const obsLinkInput = document.getElementById('obs-link-input');
         const btnCopy = document.getElementById('btn-copy');
-        const senderInfo = document.getElementById('sender-info');
-        const cameraSelect = document.getElementById('camera-select');
-        const btnMuteCam = document.getElementById('btn-mute-cam');
-        const btnMuteAudio = document.getElementById('btn-mute-audio');
-        const obsClickHint = document.getElementById('obs-click-hint');
-        
+        const iframe = document.getElementById('ninja-stream');
+        const zoomVal = document.getElementById('zoom-val');
+
         const urlParams = new URLSearchParams(window.location.search);
-        const roomId = urlParams.get('room');
+        const viewId = urlParams.get('view');
 
-        let localStream = null;
-        let peer = null;
-        let currentCall = null;
-        let isCameraActive = true;
-        let isAudioActive = true;
-
-        if (roomId) {
-            // Wir sind in OBS
+        // --- OBS MODUS ---
+        if (viewId) {
             uiContainer.classList.add('hidden');
-            obsClickHint.classList.remove('hidden'); // Zeige den Klick-Hinweis
-            initReceiver(roomId);
-        }
-
-        function activateObsStream() {
-            videoElement.muted = false; // Ton einschalten
-            videoElement.play().then(() => {
-                obsClickHint.classList.add('hidden'); // Hinweis ausblenden, wenn es läuft
-            }).catch(e => console.log("Play-Fehler:", e));
+            iframe.classList.remove('hidden');
+            // &control=1 erlaubt es dem Handy, Steuerungsbefehle wie Zoom an OBS zu senden
+            iframe.src = `https://vdo.ninja/?view=${viewId}&cleanhide=1&autoplay=1&transparent=1&control=1`;
         }
 
         // --- HANDY MODUS ---
-        function initSender() {
-            document.getElementById('btn-sender').classList.add('hidden');
-            
-            const targetRoomId = "room-" + Math.random().toString(36).substring(2, 11).toLowerCase();
-            const currentUrl = window.location.href.split('?')[0];
-            
-            obsLinkInput.value = `${currentUrl}?room=${targetRoomId}`;
+        function startCamStream() {
+            setupArea.classList.add('hidden');
             senderInfo.classList.remove('hidden');
 
-            navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-                audio: true
-            }).then(stream => {
-                localStream = stream;
-                videoElement.srcObject = stream;
-                getCameras();
+            const streamSecret = "manu-stream-" + Math.random().toString(36).substring(2, 11);
+            const currentUrl = window.location.href.split('?')[0];
+            obsLinkInput.value = `${currentUrl}?view=${streamSecret}`;
 
-                peer = new Peer();
-                peer.on('open', () => {
-                    const callInterval = setInterval(() => {
-                        if (peer && !peer.destroyed) {
-                            const call = peer.call(targetRoomId, localStream);
-                            call.on('stream', () => {
-                                clearInterval(callInterval);
-                                currentCall = call;
-                            });
-                        }
-                    }, 2500);
-                });
+            iframe.classList.remove('hidden');
+            iframe.style.position = "relative";
+            iframe.style.width = "100%";
+            iframe.style.height = "220px"; 
+            iframe.style.marginTop = "15px";
+            iframe.style.borderRadius = "8px";
+            iframe.style.border = "1px solid #444";
+            
+            // &control=1 wird auch beim Sender hinzugefügt, damit das Handy Befehle senden darf
+            iframe.src = `https://vdo.ninja/?push=${streamSecret}&facing=environment&v=1&a=1&transparent=1&quality=0&control=1`;
+        }
 
-            }).catch(err => alert("Kamera-Fehler: " + err));
+        // NEU: Zoom-Funktion an das VDO.ninja Iframe übertragen
+        function updateZoom(value) {
+            zoomVal.innerText = parseFloat(value).toFixed(1) + "x";
+            
+            if (iframe.contentWindow) {
+                // Sendet den Zoom-Befehl direkt in die VDO.ninja-Engine
+                iframe.contentWindow.postMessage(JSON.stringify({ "zoom": parseFloat(value) }), '*');
+            }
         }
 
         function copyToClipboard() {
@@ -223,76 +221,7 @@
                     btnCopy.innerText = "Kopieren";
                     btnCopy.classList.remove('success');
                 }, 2000);
-            }).catch(err => alert("Fehler beim Kopieren: " + err));
-        }
-
-        function switchCamera(deviceId) {
-            if (!localStream) return;
-            localStream.getTracks().forEach(track => track.stop());
-
-            navigator.mediaDevices.getUserMedia({
-                video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
-                audio: true
-            }).then(newStream => {
-                localStream = newStream;
-                videoElement.srcObject = newStream;
-
-                localStream.getVideoTracks()[0].enabled = isCameraActive;
-                localStream.getAudioTracks()[0].enabled = isAudioActive;
-
-                if (currentCall && currentCall.peerConnection) {
-                    const videoSender = currentCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                    if (videoSender) videoSender.replaceTrack(newStream.getVideoTracks()[0]);
-                    
-                    const audioSender = currentCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio');
-                    if (audioSender) audioSender.replaceTrack(newStream.getAudioTracks()[0]);
-                }
-            });
-        }
-
-        function getCameras() {
-            navigator.mediaDevices.enumerateDevices().then(devices => {
-                cameraSelect.innerHTML = "";
-                devices.filter(d => d.kind === 'videoinput').forEach((device, index) => {
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.text = device.label || `Kamera ${index + 1}`;
-                    cameraSelect.appendChild(option);
-                });
-            });
-        }
-
-        function toggleCamera() {
-            isCameraActive = !isCameraActive;
-            localStream.getVideoTracks()[0].enabled = isCameraActive;
-            btnMuteCam.innerText = isCameraActive ? "📷 Cam Aus" : "📷 Cam An";
-            btnMuteCam.classList.toggle('btn-muted', !isCameraActive);
-        }
-
-        function toggleAudio() {
-            isAudioActive = !isAudioActive;
-            localStream.getAudioTracks()[0].enabled = isAudioActive;
-            btnMuteAudio.innerText = isAudioActive ? "🎤 Mic Aus" : "🎤 Mic An";
-            btnMuteAudio.classList.toggle('btn-muted', !isAudioActive);
-        }
-
-        // --- OBS MODUS ---
-        function initReceiver(targetRoomId) {
-            peer = new Peer(targetRoomId);
-            peer.on('call', (call) => {
-                call.answer();
-                call.on('stream', (remoteStream) => {
-                    videoElement.srcObject = remoteStream;
-                    
-                    // Versuche das Video direkt abzuspielen
-                    videoElement.play().then(() => {
-                        // Wenn Autoplay klappt, blende den Hinweis direkt aus
-                        obsClickHint.classList.add('hidden');
-                    }).catch(e => {
-                        console.log("Autoplay blockiert, Klick erforderlich.");
-                    });
-                });
-            });
+            }).catch(err => alert("Kopieren fehlgeschlagen."));
         }
     </script>
 </body>
