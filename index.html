@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manu Cam -> OBS (Powered by VDO.ninja)</title>
+    <title>Manu Cam -> OBS</title>
     <style>
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
@@ -24,6 +24,8 @@
             width: 90%;
             box-shadow: 0 8px 25px rgba(0,0,0,0.7);
             border: 1px solid #28a745;
+            position: relative;
+            z-index: 10;
         }
         h2 { margin-top: 0; color: #28a745; }
         button {
@@ -37,10 +39,7 @@
             margin-top: 15px;
             font-weight: bold;
             width: 100%;
-            transition: background 0.2s;
         }
-        button:hover { background: #218838; }
-        
         .copy-box {
             display: flex;
             margin-top: 15px;
@@ -59,50 +58,18 @@
             flex: 1;
             font-size: 13px;
             outline: none;
-            width: 100%;
         }
         .btn-copy {
             background: #007bff;
             font-size: 14px;
             padding: 10px 15px;
-            margin-top: 0;
-            border-radius: 5px;
             width: auto;
+            border-radius: 5px;
+            margin-top: 0;
         }
         .btn-copy.success { background: #28a745; }
         
-        /* NEU: Styling für den Zoom-Bereich */
-        .zoom-container {
-            background: #222;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 15px;
-            border: 1px solid #444;
-        }
-        .zoom-label {
-            display: flex;
-            justify-content: space-between;
-            font-weight: bold;
-            font-size: 14px;
-            margin-bottom: 8px;
-        }
-        .zoom-slider {
-            width: 100%;
-            -webkit-appearance: none;
-            background: #444;
-            height: 8px;
-            border-radius: 5px;
-            outline: none;
-        }
-        .zoom-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            background: #28a745;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            cursor: pointer;
-        }
-
+        /* Vollbild-Stream für OBS */
         iframe {
             width: 100vw;
             height: 100vh;
@@ -112,47 +79,52 @@
             z-index: 1;
             background: black;
         }
-        .hidden { display: none !important; }
-        .setup-step {
-            text-align: left;
-            background: #222;
-            padding: 12px;
-            border-radius: 6px;
-            margin-top: 10px;
-            font-size: 14px;
-            border-left: 4px solid #007bff;
+        
+        /* NEU: Zoom-Steuerung direkt in OBS unten eingeblendet */
+        .obs-zoom-bar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 30px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border: 1px solid #28a745;
+            pointer-events: auto; /* Macht es in OBS klickbar */
         }
+        .zoom-slider {
+            width: 150px;
+            cursor: pointer;
+        }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
     <iframe id="ninja-stream" class="hidden" allow="camera;microphone;autoplay;fullscreen"></iframe>
 
+    <div id="obs-controls" class="obs-zoom-bar hidden">
+        <span style="font-size: 14px; font-weight: bold; white-space: nowrap;">🔍 Zoom:</span>
+        <input type="range" id="zoom-range" class="zoom-slider" min="1" max="4" step="0.1" value="1" oninput="applyObsZoom(this.value)">
+        <span id="zoom-val" style="font-family: monospace; min-width: 35px; text-align: left;">1.0x</span>
+    </div>
+
     <div id="ui" class="ui-container">
         <h2>📱 Manu Cam -> OBS</h2>
-        <p>Nutzt die ultraschnelle, stabile Verbindung von VDO.ninja direkt auf deiner Website.</p>
+        <p>Erstelle eine direkte, stabile Kameraverbindung ohne Blackscreen-Fehler.</p>
         
         <div id="setup-area">
-            <button onclick="startCamStream()">Kamera-Stream starten</button>
+            <button onclick="startHandyStream()">Kamera-Stream starten</button>
         </div>
         
         <div id="sender-info" class="hidden">
-            <div class="setup-step">
-                <strong>Schritt 1:</strong> Erlaube oben den Zugriff auf deine Kamera.
-            </div>
-
-            <div class="zoom-container">
-                <div class="zoom-label">
-                    <span>🔍 Kamera-Zoom</span>
-                    <span id="zoom-val">1.0x</span>
-                </div>
-                <input type="range" id="zoom-range" class="zoom-slider" min="1" max="4" step="0.1" value="1" oninput="updateZoom(this.value)">
-            </div>
-
-            <div class="setup-step">
-                <strong>Schritt 2:</strong> Kopiere den unteren Link und füge ihn am PC in OBS als Browserquelle ein.
-            </div>
-
+            <p><strong>✓ Stream aktiv!</strong> Erlaube ggf. den Kamerazugriff im Browser.</p>
+            <p style="font-size: 14px; color: #bbb;">Kopiere den Link und füge ihn in OBS ein:</p>
+            
             <div class="copy-box">
                 <input type="text" id="obs-link-input" readonly onclick="this.select();">
                 <button id="btn-copy" class="btn-copy" onclick="copyToClipboard()">Kopieren</button>
@@ -167,46 +139,46 @@
         const obsLinkInput = document.getElementById('obs-link-input');
         const btnCopy = document.getElementById('btn-copy');
         const iframe = document.getElementById('ninja-stream');
+        const obsControls = document.getElementById('obs-controls');
         const zoomVal = document.getElementById('zoom-val');
 
         const urlParams = new URLSearchParams(window.location.search);
         const viewId = urlParams.get('view');
 
-        // --- OBS MODUS ---
+        // --- OBS MODUS (WENN EIN EMPFÄNGER-LINK GEÖFFNET WIRD) ---
         if (viewId) {
             uiContainer.classList.add('hidden');
             iframe.classList.remove('hidden');
-            // &control=1 erlaubt es dem Handy, Steuerungsbefehle wie Zoom an OBS zu senden
+            obsControls.classList.remove('hidden'); // Zoom-Leiste einblenden
+            
+            // Direkte VDO.ninja-Verbindung für OBS laden. &control=1 erlaubt das Steuern des Zooms
             iframe.src = `https://vdo.ninja/?view=${viewId}&cleanhide=1&autoplay=1&transparent=1&control=1`;
         }
 
-        // --- HANDY MODUS ---
-        function startCamStream() {
+        // --- HANDY MODUS (SENDER) ---
+        function startHandyStream() {
             setupArea.classList.add('hidden');
             senderInfo.classList.remove('hidden');
 
-            const streamSecret = "manu-stream-" + Math.random().toString(36).substring(2, 11);
+            // Zufälligen Raum-Namen erstellen
+            const streamSecret = "manu-" + Math.random().toString(36).substring(2, 11);
+            
+            // Link generieren, den du in OBS einfügst
             const currentUrl = window.location.href.split('?')[0];
             obsLinkInput.value = `${currentUrl}?view=${streamSecret}`;
 
-            iframe.classList.remove('hidden');
-            iframe.style.position = "relative";
-            iframe.style.width = "100%";
-            iframe.style.height = "220px"; 
-            iframe.style.marginTop = "15px";
-            iframe.style.borderRadius = "8px";
-            iframe.style.border = "1px solid #444";
-            
-            // &control=1 wird auch beim Sender hinzugefügt, damit das Handy Befehle senden darf
-            iframe.src = `https://vdo.ninja/?push=${streamSecret}&facing=environment&v=1&a=1&transparent=1&quality=0&control=1`;
+            // Auf dem Handy leiten wir DIREKT auf VDO.ninja weiter. 
+            // Das umgeht alle Iframe-Sperren der Kamera unter iOS/Safari komplett!
+            setTimeout(() => {
+                window.location.href = `https://vdo.ninja/?push=${streamSecret}&facing=environment&v=1&a=1&transparent=1&quality=0&control=1`;
+            }, 1500);
         }
 
-        // NEU: Zoom-Funktion an das VDO.ninja Iframe übertragen
-        function updateZoom(value) {
+        // Zoom-Befehl direkt im OBS-Fenster ausführen
+        function applyObsZoom(value) {
             zoomVal.innerText = parseFloat(value).toFixed(1) + "x";
-            
             if (iframe.contentWindow) {
-                // Sendet den Zoom-Befehl direkt in die VDO.ninja-Engine
+                // Sendet den Zoom-Wert direkt an das Video-Fenster in OBS
                 iframe.contentWindow.postMessage(JSON.stringify({ "zoom": parseFloat(value) }), '*');
             }
         }
@@ -217,11 +189,7 @@
             navigator.clipboard.writeText(obsLinkInput.value).then(() => {
                 btnCopy.innerText = "Kopiert! ✓";
                 btnCopy.classList.add('success');
-                setTimeout(() => {
-                    btnCopy.innerText = "Kopieren";
-                    btnCopy.classList.remove('success');
-                }, 2000);
-            }).catch(err => alert("Kopieren fehlgeschlagen."));
+            }).catch(() => alert("Kopieren fehlgeschlagen."));
         }
     </script>
 </body>
