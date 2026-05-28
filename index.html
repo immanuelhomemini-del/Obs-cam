@@ -56,7 +56,6 @@
         .btn-control { background: #007bff; font-size: 14px; padding: 10px 15px; flex: 1; }
         .btn-muted { background: #dc3545 !important; }
         
-        /* NEU: Styling für den Copy-Bereich */
         .copy-box {
             display: flex;
             margin-top: 15px;
@@ -84,9 +83,7 @@
             border-radius: 5px;
             white-space: nowrap;
         }
-        .btn-copy.success {
-            background: #28a745;
-        }
+        .btn-copy.success { background: #28a745; }
 
         select {
             background: #333;
@@ -150,8 +147,9 @@
         let isAudioActive = true;
 
         if (roomId) {
+            // OBS MODUS
             uiContainer.classList.add('hidden');
-            videoElement.muted = false;
+            videoElement.muted = false; 
             initReceiver(roomId);
         }
 
@@ -159,10 +157,12 @@
         function initSender() {
             document.getElementById('btn-sender').classList.add('hidden');
             
-            const targetRoomId = "obs-room-" + Math.random().toString(36).substring(2, 11);
-            const currentUrl = window.location.href.split('?')[0];
+            // ID generieren (rein numerisch/kleingeschrieben um iOS-Fehler zu vermeiden)
+            const targetRoomId = "room-" + Math.random().toString(36).substring(2, 11).toLowerCase();
             
-            // Link in das Input-Feld schreiben
+            // BEHOBEN: Wir erzwingen die komplette URL in Kleinschreibung, damit Safari nichts verfälscht
+            const currentUrl = window.location.href.split('?')[0].toLowerCase();
+            
             obsLinkInput.value = `${currentUrl}?room=${targetRoomId}`;
             senderInfo.classList.remove('hidden');
 
@@ -172,41 +172,40 @@
             }).then(stream => {
                 localStream = stream;
                 videoElement.srcObject = stream;
+                videoElement.muted = true; // Verhindert Echo auf dem Handy
                 getCameras();
 
                 peer = new Peer();
                 peer.on('open', () => {
+                    // Der Intervall ruft den OBS-Raum fortlaufend an, bis OBS geöffnet wird
                     const callInterval = setInterval(() => {
                         if (peer && !peer.destroyed) {
                             const call = peer.call(targetRoomId, localStream);
+                            
+                            // Sobald OBS antwortet und den Stream empfängt
                             call.on('stream', () => {
                                 clearInterval(callInterval);
                                 currentCall = call;
                             });
                         }
-                    }, 3000);
+                    }, 2500);
                 });
 
             }).catch(err => alert("Kamera-Fehler: " + err));
         }
 
-        // NEU: Kopier-Funktion für Mobilgeräte
         function copyToClipboard() {
             obsLinkInput.select();
-            obsLinkInput.setSelectionRange(0, 99999); /* Für Mobilgeräte */
+            obsLinkInput.setSelectionRange(0, 99999);
             
             navigator.clipboard.writeText(obsLinkInput.value).then(() => {
                 btnCopy.innerText = "Kopiert! ✓";
                 btnCopy.classList.add('success');
-                
-                // Nach 2 Sekunden Button zurücksetzen
                 setTimeout(() => {
                     btnCopy.innerText = "Kopieren";
                     btnCopy.classList.remove('success');
                 }, 2000);
-            }).catch(err => {
-                alert("Fehler beim Kopieren: " + err);
-            });
+            }).catch(err => alert("Fehler beim Kopieren: " + err));
         }
 
         function switchCamera(deviceId) {
@@ -263,7 +262,7 @@
         function initReceiver(targetRoomId) {
             peer = new Peer(targetRoomId);
             peer.on('call', (call) => {
-                call.answer();
+                call.answer(); // Nimmt den Stream vom Handy an
                 call.on('stream', (remoteStream) => {
                     videoElement.srcObject = remoteStream;
                     videoElement.play().catch(e => console.log(e));
