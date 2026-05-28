@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Handy Kamera & Audio zu OBS</title>
+    <title>Handy Kamera zu OBS</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body {
@@ -23,7 +23,7 @@
             top: 0;
             left: 0;
             z-index: 1;
-            background: transparent;
+            background: black;
         }
         .ui-container {
             position: relative;
@@ -46,25 +46,47 @@
             cursor: pointer;
             margin-top: 10px;
             font-weight: bold;
-            transition: background 0.2s;
         }
-        button:hover { background: #218838; }
-        
         .controls-container {
             display: flex;
             justify-content: space-around;
             margin-top: 15px;
             gap: 10px;
         }
-        .btn-control {
+        .btn-control { background: #007bff; font-size: 14px; padding: 10px 15px; flex: 1; }
+        .btn-muted { background: #dc3545 !important; }
+        
+        /* NEU: Styling für den Copy-Bereich */
+        .copy-box {
+            display: flex;
+            margin-top: 15px;
+            gap: 5px;
+            background: #222;
+            border: 2px dashed #28a745;
+            border-radius: 5px;
+            padding: 5px;
+        }
+        #obs-link-input {
+            background: transparent;
+            border: none;
+            color: #a9ffb7;
+            font-family: monospace;
+            padding: 10px;
+            flex: 1;
+            font-size: 14px;
+            outline: none;
+        }
+        .btn-copy {
             background: #007bff;
             font-size: 14px;
             padding: 10px 15px;
-            flex: 1;
+            margin-top: 0;
+            border-radius: 5px;
+            white-space: nowrap;
         }
-        .btn-control:hover { background: #0056b3; }
-        .btn-muted { background: #dc3545 !important; }
-        .btn-muted:hover { background: #bd2130 !important; }
+        .btn-copy.success {
+            background: #28a745;
+        }
 
         select {
             background: #333;
@@ -75,30 +97,17 @@
             border-radius: 5px;
             margin-top: 15px;
             width: 100%;
-            cursor: pointer;
         }
         .hidden { display: none !important; }
-        #obs-link {
-            background: #222;
-            padding: 15px;
-            word-break: break-all;
-            border: 2px dashed #28a745;
-            margin-top: 15px;
-            user-select: all;
-            font-family: monospace;
-            font-size: 14px;
-            border-radius: 5px;
-            color: #a9ffb7;
-        }
     </style>
 </head>
 <body>
 
-    <video id="remote-video" autoplay playsinline></video>
+    <video id="remote-video" autoplay playsinline muted></video>
 
     <div id="ui" class="ui-container">
         <h2>📱 Handy-Kamera -> OBS</h2>
-        <p>Erstelle einen privaten Stream-Link inklusive Ton und Steuerung.</p>
+        <p>Klicke auf Start, um den Stream-Raum zu eröffnen.</p>
         <button id="btn-sender" onclick="initSender()">Stream starten</button>
         
         <div id="sender-info" class="hidden">
@@ -112,25 +121,22 @@
                 <button id="btn-mute-audio" class="btn-control" onclick="toggleAudio()">🎤 Mic Aus</button>
             </div>
 
-            <p style="margin-top: 20px;"><strong>✓ Stream aktiv!</strong> Füge diesen Link in OBS ein:</p>
-            <div id="obs-link">Generiere Link...</div>
+            <p style="margin-top: 20px; text-align: left; margin-bottom: 5px;"><strong>✓ Verbindung bereit!</strong></p>
+            
+            <div class="copy-box">
+                <input type="text" id="obs-link-input" readonly onclick="this.select();">
+                <button id="btn-copy" class="btn-copy" onclick="copyToClipboard()">Kopieren</button>
+            </div>
         </div>
-    </div>
-
-    <div id="obs-ui" class="ui-container hidden">
-        <h2>🔊 Audio aktivieren</h2>
-        <p>Klicke auf den Button, um den Ton des Streams freizuschalten.</p>
-        <button onclick="unlockAudio()">Ton einschalten</button>
     </div>
 
     <script>
         const videoElement = document.getElementById('remote-video');
         const uiContainer = document.getElementById('ui');
-        const obsUiContainer = document.getElementById('obs-ui');
-        const obsLinkLabel = document.getElementById('obs-link');
+        const obsLinkInput = document.getElementById('obs-link-input');
+        const btnCopy = document.getElementById('btn-copy');
         const senderInfo = document.getElementById('sender-info');
         const cameraSelect = document.getElementById('camera-select');
-        
         const btnMuteCam = document.getElementById('btn-mute-cam');
         const btnMuteAudio = document.getElementById('btn-mute-audio');
         
@@ -138,170 +144,129 @@
         const roomId = urlParams.get('room');
 
         let localStream = null;
-        let currentPeer = null;
-        let activeCall = null;
-        let uniqueRoomId = "";
-
+        let peer = null;
+        let currentCall = null;
         let isCameraActive = true;
         let isAudioActive = true;
 
         if (roomId) {
             uiContainer.classList.add('hidden');
-            if (!navigator.userAgent.includes("OBS")) {
-                obsUiContainer.classList.remove('hidden');
-            }
-            initReceiver(roomId);
-        } else {
-            videoElement.muted = true;
-        }
-
-        function unlockAudio() {
             videoElement.muted = false;
-            videoElement.play().catch(e => console.log(e));
-            obsUiContainer.classList.add('hidden');
+            initReceiver(roomId);
         }
 
-        // --- HANDY MODUS (SENDER) ---
+        // --- HANDY MODUS ---
         function initSender() {
             document.getElementById('btn-sender').classList.add('hidden');
             
-            // BEHOBEN: Hier fehlte das .random()
-            uniqueRoomId = "obs-stream-ctrl-" + Math.random().toString(36).substring(2, 11);
-            
+            const targetRoomId = "obs-room-" + Math.random().toString(36).substring(2, 11);
             const currentUrl = window.location.href.split('?')[0];
-            const obsUrl = `${currentUrl}?room=${uniqueRoomId}`;
-            obsLinkLabel.innerText = obsUrl;
+            
+            // Link in das Input-Feld schreiben
+            obsLinkInput.value = `${currentUrl}?room=${targetRoomId}`;
             senderInfo.classList.remove('hidden');
 
-            startStream(null);
-        }
-
-        function startStream(deviceId) {
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-            }
-
-            const videoConstraints = {
-                width: { ideal: 1920 },
-                height: { ideal: 1080 }
-            };
-
-            if (deviceId) {
-                videoConstraints.deviceId = { exact: deviceId };
-            } else {
-                videoConstraints.facingMode = "environment";
-            }
-
             navigator.mediaDevices.getUserMedia({
-                video: videoConstraints,
-                audio: { echoCancellation: true, noiseSuppression: true }
+                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: true
             }).then(stream => {
                 localStream = stream;
                 videoElement.srcObject = stream;
-
-                localStream.getVideoTracks()[0].enabled = isCameraActive;
-                if(localStream.getAudioTracks().length > 0) {
-                    localStream.getAudioTracks()[0].enabled = isAudioActive;
-                }
-
                 getCameras();
 
-                if (!currentPeer) {
-                    currentPeer = new Peer();
-                    currentPeer.on('open', () => {
-                        currentPeer.on('call', (call) => {
-                            activeCall = call;
-                            call.answer(localStream);
-                        });
-                    });
-
-                    setInterval(() => {
-                        currentPeer.connect(uniqueRoomId);
+                peer = new Peer();
+                peer.on('open', () => {
+                    const callInterval = setInterval(() => {
+                        if (peer && !peer.destroyed) {
+                            const call = peer.call(targetRoomId, localStream);
+                            call.on('stream', () => {
+                                clearInterval(callInterval);
+                                currentCall = call;
+                            });
+                        }
                     }, 3000);
-                } else if (activeCall && activeCall.peerConnection) {
-                    const videoTrack = localStream.getVideoTracks()[0];
-                    const audioTrack = localStream.getAudioTracks()[0];
-                    
-                    const videoSender = activeCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                    if (videoSender && videoTrack) {
-                        videoSender.replaceTrack(videoTrack);
-                    }
-                    const audioSender = activeCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio');
-                    if (audioSender && audioTrack) {
-                        audioSender.replaceTrack(audioTrack);
-                    }
-                }
+                });
 
+            }).catch(err => alert("Kamera-Fehler: " + err));
+        }
+
+        // NEU: Kopier-Funktion für Mobilgeräte
+        function copyToClipboard() {
+            obsLinkInput.select();
+            obsLinkInput.setSelectionRange(0, 99999); /* Für Mobilgeräte */
+            
+            navigator.clipboard.writeText(obsLinkInput.value).then(() => {
+                btnCopy.innerText = "Kopiert! ✓";
+                btnCopy.classList.add('success');
+                
+                // Nach 2 Sekunden Button zurücksetzen
+                setTimeout(() => {
+                    btnCopy.innerText = "Kopieren";
+                    btnCopy.classList.remove('success');
+                }, 2000);
             }).catch(err => {
-                alert("Fehler beim Kamerazugriff: " + err);
+                alert("Fehler beim Kopieren: " + err);
+            });
+        }
+
+        function switchCamera(deviceId) {
+            if (!localStream) return;
+            localStream.getTracks().forEach(track => track.stop());
+
+            navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } },
+                audio: true
+            }).then(newStream => {
+                localStream = newStream;
+                videoElement.srcObject = newStream;
+
+                localStream.getVideoTracks()[0].enabled = isCameraActive;
+                localStream.getAudioTracks()[0].enabled = isAudioActive;
+
+                if (currentCall && currentCall.peerConnection) {
+                    const videoSender = currentCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (videoSender) videoSender.replaceTrack(newStream.getVideoTracks()[0]);
+                    
+                    const audioSender = currentCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'audio');
+                    if (audioSender) audioSender.replaceTrack(newStream.getAudioTracks()[0]);
+                }
+            });
+        }
+
+        function getCameras() {
+            navigator.mediaDevices.enumerateDevices().then(devices => {
+                cameraSelect.innerHTML = "";
+                devices.filter(d => d.kind === 'videoinput').forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Kamera ${index + 1}`;
+                    cameraSelect.appendChild(option);
+                });
             });
         }
 
         function toggleCamera() {
-            if (localStream) {
-                isCameraActive = !isCameraActive;
-                localStream.getVideoTracks()[0].enabled = isCameraActive;
-                
-                if (isCameraActive) {
-                    btnMuteCam.innerText = "📷 Cam Aus";
-                    btnMuteCam.classList.remove('btn-muted');
-                } else {
-                    btnMuteCam.innerText = "📷 Cam An";
-                    btnMuteCam.classList.add('btn-muted');
-                }
-            }
+            isCameraActive = !isCameraActive;
+            localStream.getVideoTracks()[0].enabled = isCameraActive;
+            btnMuteCam.innerText = isCameraActive ? "📷 Cam Aus" : "📷 Cam An";
+            btnMuteCam.classList.toggle('btn-muted', !isCameraActive);
         }
 
         function toggleAudio() {
-            if (localStream && localStream.getAudioTracks().length > 0) {
-                isAudioActive = !isAudioActive;
-                localStream.getAudioTracks()[0].enabled = isAudioActive;
-                
-                if (isAudioActive) {
-                    btnMuteAudio.innerText = "🎤 Mic Aus";
-                    btnMuteAudio.classList.remove('btn-muted');
-                } else {
-                    btnMuteAudio.innerText = "🎤 Mic An";
-                    btnMuteAudio.classList.add('btn-muted');
-                }
-            }
+            isAudioActive = !isAudioActive;
+            localStream.getAudioTracks()[0].enabled = isAudioActive;
+            btnMuteAudio.innerText = isAudioActive ? "🎤 Mic Aus" : "🎤 Mic An";
+            btnMuteAudio.classList.toggle('btn-muted', !isAudioActive);
         }
 
-        function getCameras() {
-            navigator.mediaDevices.enumerateDevices()
-                .then(devices => {
-                    cameraSelect.innerHTML = "";
-                    let videoDevices = devices.filter(device => device.kind === 'videoinput');
-                    
-                    videoDevices.forEach((device, index) => {
-                        const option = document.createElement('option');
-                        option.value = device.deviceId;
-                        option.text = device.label || `Kamera ${index + 1}`;
-                        
-                        if (localStream && localStream.getVideoTracks()[0].getSettings().deviceId === device.deviceId) {
-                            option.selected = true;
-                        }
-                        cameraSelect.appendChild(option);
-                    });
-                });
-        }
-
-        function switchCamera(deviceId) {
-            if (deviceId) {
-                startStream(deviceId);
-            }
-        }
-
-        // --- OBS MODUS (EMPFÄNGER) ---
+        // --- OBS MODUS ---
         function initReceiver(targetRoomId) {
-            const peer = new Peer(targetRoomId);
-
+            peer = new Peer(targetRoomId);
             peer.on('call', (call) => {
                 call.answer();
                 call.on('stream', (remoteStream) => {
                     videoElement.srcObject = remoteStream;
-                    videoElement.muted = false;
-                    videoElement.play().catch(e => console.log("Autoplay blockiert:", e));
+                    videoElement.play().catch(e => console.log(e));
                 });
             });
         }
