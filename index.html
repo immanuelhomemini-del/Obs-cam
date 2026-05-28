@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Handy Kamera zu OBS</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #121212;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            margin: 0;
+            overflow: hidden;
+        }
+        
+        /* WICHTIG FÜR OBS-ZOOM: Erlaubt flexibles Skalieren ohne Qualitätsverlust */
+        video {
+            width: 100vw;
+            height: 100vh;
+            object-fit: contain; /* 'contain' sorgt dafür, dass das ganze Bild sichtbar bleibt */
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            background: transparent; /* Transparent für besseres Einbetten in OBS */
+            transform-origin: center center;
+        }
+
+        .ui-container {
+            position: relative;
+            z-index: 2;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 30px;
+            border-radius: 15px;
+            display: inline-block;
+            margin-top: 50px;
+            max-width: 90%;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background: #218838; }
+        .hidden { display: none !important; }
+        
+        #obs-link {
+            background: #222;
+            padding: 15px;
+            word-break: break-all;
+            border: 2px dashed #28a745;
+            margin-top: 15px;
+            user-select: all;
+            font-family: monospace;
+            font-size: 14px;
+            border-radius: 5px;
+            color: #a9ffb7;
+        }
+    </style>
+</head>
+<body>
+
+    <video id="remote-video" autoplay playsinline muted></video>
+
+    <div id="ui" class="ui-container">
+        <h2>📱 Handy-Kamera -> OBS</h2>
+        <p>Erstelle einen privaten, einmaligen Stream-Link für OBS.</p>
+        <button id="btn-sender" onclick="initSender()">Stream-Link generieren & Kamera starten</button>
+        
+        <div id="sender-info" class="hidden">
+            <p><strong>✓ Kamera aktiv!</strong> Kopiere diesen einmaligen Link und füge ihn in OBS als Browserquelle ein:</p>
+            <div id="obs-link">Generiere Link...</div>
+            <p style="font-size: 12px; color: #aaa; margin-top: 10px;">Hinweis: Schließe dieses Tab auf dem Handy nicht, solange du in OBS streamst.</p>
+        </div>
+    </div>
+
+    <script>
+        const videoElement = document.getElementById('remote-video');
+        const uiContainer = document.getElementById('ui');
+        const obsLinkLabel = document.getElementById('obs-link');
+        const senderInfo = document.getElementById('sender-info');
+        
+        // URL-Parameter auslesen
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomId = urlParams.get('room');
+
+        // Wenn ein 'room' in der URL steht, sind wir automatisch im OBS-Modus (Empfänger)
+        if (roomId) {
+            uiContainer.classList.add('hidden');
+            initReceiver(roomId);
+        }
+
+        // --- HANDY MODUS (SENDER) ---
+        function initSender() {
+            document.getElementById('btn-sender').classList.add('hidden');
+            
+            // Generiere eine zufällige, eindeutige ID für diesen Stream
+            const uniqueRoomId = "obs-stream-" + Math.random().toString(36).substring(2, 11);
+            
+            // Link für OBS mit dem Raum-Parameter erstellen
+            const currentUrl = window.location.href.split('?')[0];
+            const obsUrl = `${currentUrl}?room=${uniqueRoomId}`;
+            obsLinkLabel.innerText = obsUrl;
+            senderInfo.classList.remove('hidden');
+
+            // Kamera starten
+            navigator.mediaDevices.getUserMedia({
+                video: { 
+                    facingMode: "environment",
+                    width: { ideal: 1920 }, // Versuche Full-HD für schärferen Zoom zu bekommen
+                    height: { ideal: 1080 }
+                },
+                audio: false
+            }).then(stream => {
+                videoElement.srcObject = stream;
+                
+                // Verbindung zum Peer-Server aufbauen (als Sender lassen wir PeerJS eine ID vergeben)
+                const peer = new Peer();
+                
+                peer.on('open', () => {
+                    // Sobald das Handy bereit ist, lauscht es, ob die OBS-Browserquelle (uniqueRoomId) anruft
+                    peer.on('call', (call) => {
+                        call.answer(stream); // Stream an OBS senden
+                    });
+                });
+
+                // Intervall-Verbindung für den Fall, dass OBS zuerst da war
+                setInterval(() => {
+                    const conn = peer.connect(uniqueRoomId);
+                }, 3000);
+
+            }).catch(err => {
+                alert("Kamera-Fehler: " + err);
+            });
+        }
+
+        // --- OBS MODUS (EMPFÄNGER) ---
+        function initReceiver(targetRoomId) {
+            // Der OBS-PC meldet sich mit der exakten Raum-ID beim Server an
+            const peer = new Peer(targetRoomId);
+
+            peer.on('open', () => {
+                console.log("OBS wartet auf Stream im Raum: " + targetRoomId);
+            });
+
+            // Wenn das Handy anruft (oder wir die Verbindung herstellen)
+            peer.on('call', (call) => {
+                call.answer(); // Keine eigene Kamera zurücksenden
+                call.on('stream', (remoteStream) => {
+                    videoElement.srcObject = remoteStream;
+                });
+            });
+
+            // Falls die Verbindung abbricht, versucht PeerJS im Hintergrund stabil zu bleiben
+            peer.on('error', (err) => {
+                console.log("Verbindung wird neu aufgebaut...", err);
+            });
+        }
+    </script>
+</body>
+</html>
