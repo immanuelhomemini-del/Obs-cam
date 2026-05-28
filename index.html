@@ -96,6 +96,19 @@
             width: 100%;
         }
         .hidden { display: none !important; }
+        
+        /* Hinweistext für OBS */
+        #obs-click-hint {
+            position: absolute;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0,0,0,0.7);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -127,6 +140,11 @@
         </div>
     </div>
 
+    <div id="obs-click-hint" class="hidden" onclick="activateObsStream()">
+        <h2>🔴 Live-Stream empfangen</h2>
+        <p>Bitte klicke hier mitten ins Fenster, um Bild und Ton zu aktivieren.</p>
+    </div>
+
     <script>
         const videoElement = document.getElementById('remote-video');
         const uiContainer = document.getElementById('ui');
@@ -136,6 +154,7 @@
         const cameraSelect = document.getElementById('camera-select');
         const btnMuteCam = document.getElementById('btn-mute-cam');
         const btnMuteAudio = document.getElementById('btn-mute-audio');
+        const obsClickHint = document.getElementById('obs-click-hint');
         
         const urlParams = new URLSearchParams(window.location.search);
         const roomId = urlParams.get('room');
@@ -147,20 +166,24 @@
         let isAudioActive = true;
 
         if (roomId) {
-            // OBS MODUS
+            // Wir sind in OBS
             uiContainer.classList.add('hidden');
-            videoElement.muted = false; 
+            obsClickHint.classList.remove('hidden'); // Zeige den Klick-Hinweis
             initReceiver(roomId);
+        }
+
+        function activateObsStream() {
+            videoElement.muted = false; // Ton einschalten
+            videoElement.play().then(() => {
+                obsClickHint.classList.add('hidden'); // Hinweis ausblenden, wenn es läuft
+            }).catch(e => console.log("Play-Fehler:", e));
         }
 
         // --- HANDY MODUS ---
         function initSender() {
             document.getElementById('btn-sender').classList.add('hidden');
             
-            // Nur die ID wird in Kleinbuchstaben erzwungen
             const targetRoomId = "room-" + Math.random().toString(36).substring(2, 11).toLowerCase();
-            
-            // BEHOBEN: Behält die exakte Schreibweise (Groß-/Kleinschreibung) deiner GitHub-URL bei!
             const currentUrl = window.location.href.split('?')[0];
             
             obsLinkInput.value = `${currentUrl}?room=${targetRoomId}`;
@@ -172,7 +195,6 @@
             }).then(stream => {
                 localStream = stream;
                 videoElement.srcObject = stream;
-                videoElement.muted = true;
                 getCameras();
 
                 peer = new Peer();
@@ -194,7 +216,6 @@
         function copyToClipboard() {
             obsLinkInput.select();
             obsLinkInput.setSelectionRange(0, 99999);
-            
             navigator.clipboard.writeText(obsLinkInput.value).then(() => {
                 btnCopy.innerText = "Kopiert! ✓";
                 btnCopy.classList.add('success');
@@ -262,7 +283,14 @@
                 call.answer();
                 call.on('stream', (remoteStream) => {
                     videoElement.srcObject = remoteStream;
-                    videoElement.play().catch(e => console.log(e));
+                    
+                    // Versuche das Video direkt abzuspielen
+                    videoElement.play().then(() => {
+                        // Wenn Autoplay klappt, blende den Hinweis direkt aus
+                        obsClickHint.classList.add('hidden');
+                    }).catch(e => {
+                        console.log("Autoplay blockiert, Klick erforderlich.");
+                    });
                 });
             });
         }
